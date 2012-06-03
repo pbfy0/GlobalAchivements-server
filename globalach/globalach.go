@@ -58,7 +58,15 @@ func update(w http.ResponseWriter, r *http.Request){
         user.Sid = sid
     }
     var stats StatList
+
+    if(user.Stats == "."){
+        stats = make(StatList)
+        user.Stats = "{}"
+    }else if(user.Stats != ""){
+        _ = json.Unmarshal([]byte(user.Stats), &stats)
+    }
     if(user.Stats == ""){
+        stats = make(StatList)
         statIterate := datastore.NewQuery("Stat").Ancestor(userKey).Run(c)
         var curStat Stat
         for {
@@ -73,12 +81,6 @@ func update(w http.ResponseWriter, r *http.Request){
             stats[fmt.Sprintf("%d", curStat.Id)] = fmt.Sprintf("%d", curStat.Value)
             datastore.Delete(c, curStatKey)
         }
-    }
-    if(user.Stats == "."){
-        stats = make(StatList)
-        user.Stats = "{}"
-    }else{
-        _ = json.Unmarshal([]byte(user.Stats), &stats)
     }
     var inputData map[string]interface{}
     err = json.Unmarshal([]byte(jsonText), &inputData)
