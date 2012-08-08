@@ -24,35 +24,35 @@ type Stat struct {
 }
 
 func init() {
-    http.HandleFunc("/", update)
-    http.HandleFunc("/update", update)
+    http.HandleFunc("/", stat)
+    http.HandleFunc("/update", stat)
+    http.HandleFunc("/stat", stat)
+    http.HandleFunc("/setting", stat)
 }
 
-func update(w http.ResponseWriter, r *http.Request){
+var c appengine.Context
+var client *http.Client
+var writer http.ResponseWriter
+
+func stat(w http.ResponseWriter, r *http.Request){
     username, sid, jsonText := r.FormValue("username"), r.FormValue("sid"), r.FormValue("stats")
     var user User
     //var statkey *datastore.Key
-    c := appengine.NewContext(r)
+    c = appengine.NewContext(r)
+    client = urlfetch.Client(c)
+    writer = w
     userKey, err := datastore.NewQuery("User").Filter("Username =", username).Limit(1).Run(c).Next(&user)
     if(err == datastore.Done){
+        if(!validateUser(username, sid)){
+            return
+        }
         user = User{
             Username: username,
         }
         userKey, _ = datastore.Put(c, datastore.NewIncompleteKey(c, "User", nil), &user)
     }
     if(sid != user.Sid){
-        client := urlfetch.Client(c)
-        resp, err := client.Get("http://session.minecraft.net/game/joinserver.jsp?user=" + username + "&sessionId=" + sid + "&serverId=global_achievements");
-        if err != nil {
-            http.Error(w, err.Error(), http.StatusBadGateway)
-            //fmt.Fprintf(w, "%s, %s, %s\n", username, sid, string(contents))
-            return
-        }
-        defer resp.Body.Close()
-        bac, _ := ioutil.ReadAll(resp.Body)
-        contents := string(bac)
-        if contents != "OK" {
-            http.Error(w, contents, http.StatusUnauthorized)
+        if(!validateUser(username, sid)){
             return
         }
         user.Sid = sid
@@ -96,7 +96,7 @@ func update(w http.ResponseWriter, r *http.Request){
                 ival = fmt.Sprintf("%d", jval.(int))
                 break
             case string:
-                ival, _ = jval.(string)
+                ival = jval.(string)
                 break
             case float64:
                 ival = fmt.Sprintf("%d", int(jval.(float64)))
@@ -108,4 +108,21 @@ func update(w http.ResponseWriter, r *http.Request){
     fmt.Fprintf(w, "%s", outstring)
     user.Stats = string(outstring)
     datastore.Put(c, userKey, &user)
+}
+
+func validateUser(username string, sid string) bool {
+    resp, err := client.Get("http://session.minecraft.net/game/joinserver.jsp?user=" + username + "&sessionId=" + sid + "&serverId=global_achievements");
+    if err != nil {
+        http.Error(writer, err.Error(), http.StatusBadGateway)
+        //fmt.Fprintf(w, "%s, %s, %s\n", username, sid, string(contents))
+        return false
+    }
+    defer resp.Body.Close()
+    bac, _ := ioutil.ReadAll(resp.Body)
+    contents := string(bac)
+    if contents != "OK" {
+        http.Error(writer, contents, http.StatusUnauthorized)
+        return false
+    }
+    return true
 }
